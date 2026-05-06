@@ -11,7 +11,6 @@ def validate_code(code):
     try:
         lexer = Lexer(code)
         tokens = lexer.tokens
-        
         parser = Parser(tokens)
         ast_nodes = parser.parse_program()
         
@@ -19,10 +18,8 @@ def validate_code(code):
             hasattr(node, 'name') and node.name == 'main' 
             for node in ast_nodes
         )
-        
         if not has_main:
             errors.append({"line": "EOF", "msg": "Global Error: main() function is missing."})
-            
     except Exception as e:
         error_msg = str(e)
         line_num = "Unknown"
@@ -30,54 +27,50 @@ def validate_code(code):
         if match:
             line_num = match.group(1)
         errors.append({"line": line_num, "msg": error_msg})
-        
     return errors
 
 def run_interactive_interpreter():
     evaluator = Evaluator()
-    user_code_buffer = []
+    user_code_buffer = []  # 程式緩衝區
     is_modified = False 
+    trace_mode = False     # TRACE 開關
     
-    # 支援多行輸入的關鍵變數
     pending_lines = [] 
     brace_level = 0 
 
-    print("Small-C Interpreter (Enhanced Interactive Mode)")
+    print("Small-C Interactive Interpreter v3.0")
+    print("System Software Final Project, Spring 2026")
     
     while True:
         try:
-            # 根據大括號深度顯示提示字元，達成圖中的效果
+            # 根據大括號深度顯示提示字元
             prompt = "sc> " if brace_level == 0 else ">   "
             line = input(prompt)
             
             if not line.strip() and brace_level == 0:
                 continue
 
-            # 統計大括號數量來判斷區塊是否結束
+            # 統計大括號數量判斷區塊
             brace_level += line.count('{')
             brace_level -= line.count('}')
             pending_lines.append(line)
 
-            # 如果還在區塊內（大括號未閉合），繼續等待輸入
             if brace_level > 0:
                 continue
             
-            # 完整語句合併
             current_code = "\n".join(pending_lines)
             pending_lines = []
             
-            # 檢查指令
+            # 指令解析
             parts = current_code.strip().split()
             if not parts: continue
             cmd = parts[0].upper()
 
-            # --- 系統指令 ---
+            # --- 3.1 程式管理指令 ---
             if cmd == "LOAD":
-                if len(parts) < 2:
-                    print("Usage: LOAD <filename>"); continue
+                if len(parts) < 2: print("Usage: LOAD <filename>"); continue
                 if is_modified:
-                    confirm = input("Discard unsaved changes? (y/n): ")
-                    if confirm.lower() != 'y': continue
+                    if input("Discard unsaved changes? (y/n): ").lower() != 'y': continue
                 filename = parts[1]
                 if os.path.exists(filename):
                     with open(filename, "r") as f:
@@ -88,29 +81,91 @@ def run_interactive_interpreter():
                     print(f"Error: File '{filename}' not found.")
 
             elif cmd == "SAVE":
-                if len(parts) < 2:
-                    print("Usage: SAVE <filename>"); continue
+                if len(parts) < 2: print("Usage: SAVE <filename>"); continue
                 with open(parts[1], "w") as f:
                     f.write("\n".join(user_code_buffer))
                 is_modified = False
                 print(f"Saved {len(user_code_buffer)} lines.")
 
             elif cmd == "LIST":
-                if not user_code_buffer:
-                    print("Buffer is empty."); continue
-                for i, content in enumerate(user_code_buffer, 1):
-                    print(f"{i:3}: {content}")
+                if not user_code_buffer: print("Buffer is empty."); continue
+                start, end = 1, len(user_code_buffer)
+                if len(parts) > 1:
+                    if '-' in parts[1]: # 處理 LIST n1-n2
+                        n1, n2 = map(int, parts[1].split('-'))
+                        start, end = max(1, n1), min(len(user_code_buffer), n2)
+                    else: # 處理 LIST n
+                        start = end = int(parts[1])
+                for i in range(start, end + 1):
+                    print(f"{i:3}: {user_code_buffer[i-1]}")
+
+            elif cmd == "EDIT":
+                if len(parts) < 2: print("Usage: EDIT <n>"); continue
+                idx = int(parts[1]) - 1
+                if 0 <= idx < len(user_code_buffer):
+                    print(f"{idx+1}: {user_code_buffer[idx]}")
+                    new_line = input(f"{idx+1}: ")
+                    if new_line.strip():
+                        user_code_buffer[idx] = new_line
+                        is_modified = True
+                else: print("Line number out of range.")
+
+            elif cmd == "DELETE":
+                if len(parts) < 2: print("Usage: DELETE <n> or <n1-n2>"); continue
+                if '-' in parts[1]:
+                    n1, n2 = map(int, parts[1].split('-'))
+                    del user_code_buffer[n1-1:n2]
+                else:
+                    user_code_buffer.pop(int(parts[1]) - 1)
+                is_modified = True
+
+            elif cmd == "INSERT":
+                if len(parts) < 2: print("Usage: INSERT <n>"); continue
+                idx = int(parts[1]) - 1
+                print("Insert mode (type '.' to end):")
+                temp_buffer = []
+                while True:
+                    text = input(f"{idx + len(temp_buffer) + 1}> ")
+                    if text.strip() == ".": break
+                    temp_buffer.append(text)
+                user_code_buffer[idx:idx] = temp_buffer
+                is_modified = True
+
+            elif cmd == "APPEND":
+                print("Append mode (type '.' to end):")
+                while True:
+                    text = input(f"{len(user_code_buffer) + 1}> ")
+                    if text.strip() == ".": break
+                    user_code_buffer.append(text)
+                    is_modified = True
 
             elif cmd == "NEW":
+                if is_modified:
+                    if input("Discard changes? (y/n): ").lower() != 'y': continue
                 evaluator.reset_state()
                 user_code_buffer.clear()
                 is_modified = False
                 print("All cleared.")
 
+            # --- 3.2 執行與除錯指令 ---
             elif cmd == "RUN":
-                if not user_code_buffer:
-                    print("Buffer is empty."); continue
-                execute_ast("\n".join(user_code_buffer), evaluator)
+                if not user_code_buffer: print("Buffer is empty."); continue
+                evaluator.reset_state() # RUN 前清除前次執行狀態
+                execute_ast("\n".join(user_code_buffer), evaluator, trace_mode)
+
+            elif cmd == "CHECK":
+                errors = validate_code("\n".join(user_code_buffer))
+                if not errors: print("No errors found.")
+                else:
+                    for err in errors: print(f"Line {err['line']}: {err['msg']}")
+
+            elif cmd == "TRACE":
+                if len(parts) > 1 and parts[1].upper() == "ON":
+                    trace_mode = True
+                    print("Trace mode enabled.")
+                else:
+                    trace_mode = False
+                    print("Trace mode disabled.")
 
             elif cmd == "VARS":
                 vars_info = evaluator.get_global_variables()
@@ -118,7 +173,12 @@ def run_interactive_interpreter():
                 for name, info in vars_info.items():
                     print(f"{name:<10} {info['type']:<10} {info['value']}")
 
-            elif cmd == "EXIT":
+            elif cmd == "FUNCS":
+                evaluator.display_funcs() # 呼叫 Evaluator 內的函式列表顯示
+
+            elif cmd == "EXIT" or cmd == "QUIT":
+                if is_modified:
+                    if input("Unsaved changes! Exit anyway? (y/n): ").lower() != 'y': continue
                 sys.exit(0)
 
             # --- 即時執行模式 ---
@@ -127,14 +187,10 @@ def run_interactive_interpreter():
                     lexer = Lexer(current_code)
                     parser = Parser(lexer.tokens)
                     nodes = parser.parse_program()
-                    
                     for node in nodes:
-                        # 在持續存在的作用域中執行，變數才能跨行維持
                         evaluator.evaluate(node, evaluator.global_scope)
-                    
                     user_code_buffer.append(current_code)
                     is_modified = True
-                    
                 except Exception as eval_e:
                     print(f"Error: {eval_e}")
             
@@ -147,12 +203,13 @@ def run_interactive_interpreter():
         except Exception as e:
             print(f"Fatal Error: {e}")
 
-def execute_ast(code, evaluator):
+def execute_ast(code, evaluator, trace=False):
     if not code.strip(): return
     lexer = Lexer(code)
     parser = Parser(lexer.tokens)
     ast_nodes = parser.parse_program()
-    return evaluator.execute_top_level(ast_nodes)
+    # 這裡若 trace 為 True，內部執行器應印出對應行號內容
+    return evaluator.execute_top_level(ast_nodes, trace)
 
 if __name__ == "__main__":
     run_interactive_interpreter()

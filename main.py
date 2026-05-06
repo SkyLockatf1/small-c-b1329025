@@ -149,9 +149,15 @@ def run_interactive_interpreter():
 
             # --- 3.2 執行與除錯指令 ---
             elif cmd == "RUN":
-                if not user_code_buffer: print("Buffer is empty."); continue
-                evaluator.reset_state() # RUN 前清除前次執行狀態
-                execute_ast("\n".join(user_code_buffer), evaluator, trace_mode)
+                if not user_code_buffer: 
+                    print("Buffer is empty.")
+                    continue
+                evaluator.reset_state() 
+                
+                try:
+                    execute_ast("\n".join(user_code_buffer), evaluator) 
+                except Exception as e:
+                    print(f"Runtime Error: {e}")
 
             elif cmd == "CHECK":
                 errors = validate_code("\n".join(user_code_buffer))
@@ -209,7 +215,7 @@ def execute_ast(code, evaluator, trace=False):
     parser = Parser(lexer.tokens)
     ast_nodes = parser.parse_program()
     # 這裡若 trace 為 True，內部執行器應印出對應行號內容
-    return evaluator.execute_top_level(ast_nodes, trace)
+    return evaluator.execute_top_level(ast_nodes)
 
 if __name__ == "__main__":
     run_interactive_interpreter()

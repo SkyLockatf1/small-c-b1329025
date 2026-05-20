@@ -32,9 +32,20 @@ class Lexer:
             
             # 進行替換：將程式碼中的 MAX 換成 100
             processed_line = line
-            for name, value in self.macros.items():
-                # 使用正則替換，確保不會誤換到 ID 的一部分（例如 MAX_VAL 不應被換掉）
-                processed_line = re.sub(r'\b' + name + r'\b', value, processed_line)
+            if self.macros:
+                for name, value in self.macros.items():
+                    # 這個正則會同時抓出「雙引號字串」或「獨立的巨集名稱」
+                    # 用 r'(".*?")' 來捕捉字串，用 r'\b' + re.escape(name) + r'\b' 來捕捉巨集
+                    pattern = r'("(?:\\.|[^"])*")|\b' + re.escape(name) + r'\b'
+                    
+                    def replace_func(match):
+                        # 如果 match.group(1) 有值，代表目前抓到的是「雙引號內的字串」
+                        if match.group(1):
+                            return match.group(1) # 原封不動回傳，不替換
+                        # 否則，代表是字串外的巨集，安全替換！
+                        return value
+
+                    processed_line = re.sub(pattern, replace_func, processed_line)
             new_lines.append(processed_line)
         
         return '\n'.join(new_lines)
